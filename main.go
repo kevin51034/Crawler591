@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sync"
+
 	//"os"
 	//"bufio"
 	"encoding/json"
@@ -28,6 +30,7 @@ type Crawler struct {
 	items     int
 	houselist []*HouseInfo
 	options   *Options
+	wg       sync.WaitGroup
 }
 
 type Options struct {
@@ -52,7 +55,7 @@ type Options struct {
 }
 
 type HouseInfo struct {
-	//ID		   string `json:"id"`
+	ID		   int `json:"id"`
 	ImgSrc  string `json:"imgsrc"`
 	Title   string `json:"title"`
 	URL     string `json:"url"`
@@ -89,18 +92,16 @@ func (c *Crawler) NewURL() string {
 	}
 	return rootURL + v.Encode()
 }
-func (c *Crawler) Scrape() {
+func (c *Crawler) Scrape(page int) {
+	defer c.wg.Done()
 	c.url = c.NewURL()
 	// Request the HTML page.
-	items := c.items
-	pages := items/30 + 1
-	for i := 0; i < pages; i++ {
 		u, err := url.Parse(c.url)
 		if err != nil {
 			log.Fatal(err)
 		}
 		q := u.Query()
-		q.Set("firstRow", strconv.Itoa(i*30))
+		q.Set("firstRow", strconv.Itoa(page*30))
 		fmt.Println("Crawlering ------> " + rootURL + q.Encode())
 		res, err := http.Get(rootURL + q.Encode())
 		if err != nil {
@@ -117,6 +118,7 @@ func (c *Crawler) Scrape() {
 			log.Fatal(err)
 		}
 
+		var thisid = page*30
 		// Find the content section
 		doc.Find("#content").Each(func(i int, s *goquery.Selection) {
 			// For each listInfo section, and loop to get the detail
@@ -128,6 +130,7 @@ func (c *Crawler) Scrape() {
 					//fmt.Println(img)
 				}
 
+				newHouseInfo.ID = thisid
 				newHouseInfo.Title = listInfo.Find(".pull-left.infoContent > h3 > a").Text()
 				//fmt.Println(title)
 
@@ -161,10 +164,29 @@ func (c *Crawler) Scrape() {
 				listInfo.Find(".newArticle").Each(func(_ int, n *goquery.Selection) {
 					newHouseInfo.NewItem = true
 				})
-				c.houselist = append(c.houselist, newHouseInfo)
+				//c.houselist = append(c.houselist, newHouseInfo)
+				c.houselist[thisid] = newHouseInfo
+				thisid++
 			})
 		})
+}
+
+func (c *Crawler) Start(page int) {
+	totalitems, totalpages := c.ItemandPageNum()
+	fmt.Println(totalitems)
+	if page == -1 {
+		page = totalpages
 	}
+	if totalpages < page {
+		fmt.Println("There are only " + strconv.Itoa(totalpages) + " pages!")
+		page = totalpages
+	}
+	c.houselist = make([]*HouseInfo, page*30)
+	for i:=0; i<page; i++ {
+		c.wg.Add(1)
+		go c.Scrape(i)
+	}
+	c.wg.Wait()
 }
 
 func stringReplacer(s string) string {
@@ -173,20 +195,26 @@ func stringReplacer(s string) string {
 	return r.Replace(s)
 }
 
-func findItemandPage(doc *goquery.Document) {
+func (c *Crawler) ItemandPageNum() (int, int) {
+	v, err := query.Values(c.options)
+	if err != nil {
+		log.Fatal(err)
+	}
+	url := rootURL + v.Encode()
+	doc := NewDoc(url)
 	//var url = "https://rent.591.com.tw/?kind=0&region=1"
 	r := strings.NewReplacer("\n", "", " ", "", ",", "")
 	stritems := r.Replace(doc.Find(".pull-left.hasData > i").Text())
 	//items := strings.Replace(doc.Find(".pull-left.hasData > i").Text(), ",", "", -1)
-	pages, _ := strconv.Atoi(stritems)
-	pages = pages/30 + 1
-	fmt.Println("it has " + stritems + " items!")
-	fmt.Println(pages)
+	items, _ := strconv.Atoi(stritems)
+	pages := items/30 + 1
+
+	return items, pages
 }
 
-func NewDoc() *goquery.Document {
+func NewDoc(url string) *goquery.Document {
 	// Request the HTML page.
-	res, err := http.Get("https://rent.591.com.tw/?kind=0&region=1")
+	res, err := http.Get(url)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -215,8 +243,8 @@ func main() {
 	//var url = "https://rent.591.com.tw/?kind=0&region=1"
 	c := Newcrawler()
 	c.options.RentPrice = "2"
-
-	c.Scrape()
+	c.Start(5000)
+	//c.Scrape()
 	//doc := NewDoc()
 	//findItemandPage(doc)
 	//fmt.Println(c.options)
