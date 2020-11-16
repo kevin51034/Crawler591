@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"io/ioutil"
 	//"os"
 	//"bufio"
 	"encoding/json"
@@ -13,7 +13,10 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/google/go-querystring/query"
 )
+
+const rootURL = "https://rent.591.com.tw/?"
 
 // Document is the representation goquery.Document.
 type Document struct {
@@ -21,9 +24,10 @@ type Document struct {
 }
 
 type Crawler struct {
-	url   string
-	items int
+	url       string
+	items     int
 	houselist []*HouseInfo
+	options   *Options
 }
 
 type Options struct {
@@ -49,31 +53,44 @@ type Options struct {
 
 type HouseInfo struct {
 	//ID		   string `json:"id"`
-	Img    	   string `json:"img"`
-	Title      string `json:"title"`
-	URL        string `json:"url"`
-	Kind   string `json:"kind"`
-	Layout string `json:"layout"`
-	Ping       string `json:"ping"`
-	Floor      string `json:"floor"`
-	Address    string `json:"address"`
-	Price      string `json:"price"`
-	NewItem      bool   `json:"newItem"`
+	ImgSrc  string `json:"imgsrc"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Kind    string `json:"kind"`
+	Layout  string `json:"layout"`
+	Ping    string `json:"ping"`
+	Floor   string `json:"floor"`
+	Address string `json:"address"`
+	Price   string `json:"price"`
+	NewItem bool   `json:"newItem"`
 }
 
-func Newcrawler(url string) *Crawler {
+func Newcrawler() *Crawler {
 	return &Crawler{
-		url:   url,
-		items: 20,
+		url:       rootURL,
+		items:     50,
 		houselist: make([]*HouseInfo, 0),
+		options: &Options{
+			Kind:      0,
+			Region:    1,
+			Order:     "posttime",
+			OrderType: "desc",
+		},
 	}
 }
 
 func NewHouseInfo() *HouseInfo {
-	return &HouseInfo {}
+	return &HouseInfo{}
 }
-
+func (c *Crawler) NewURL() string {
+	v, err := query.Values(c.options)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return rootURL + v.Encode()
+}
 func (c *Crawler) Scrape() {
+	c.url = c.NewURL()
 	// Request the HTML page.
 	items := c.items
 	pages := items/30 + 1
@@ -83,9 +100,9 @@ func (c *Crawler) Scrape() {
 			log.Fatal(err)
 		}
 		q := u.Query()
-		q.Add("firstRow", strconv.Itoa(i*30))
-		fmt.Println("Crawlering ------> " + "https://rent.591.com.tw/" + q.Encode())
-		res, err := http.Get("https://rent.591.com.tw/?" + q.Encode())
+		q.Set("firstRow", strconv.Itoa(i*30))
+		fmt.Println("Crawlering ------> " + rootURL + q.Encode())
+		res, err := http.Get(rootURL + q.Encode())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -100,7 +117,6 @@ func (c *Crawler) Scrape() {
 			log.Fatal(err)
 		}
 
-		fmt.Println("find")
 		// Find the content section
 		doc.Find("#content").Each(func(i int, s *goquery.Selection) {
 			// For each listInfo section, and loop to get the detail
@@ -108,10 +124,10 @@ func (c *Crawler) Scrape() {
 				// For each item found, get the band and title
 				newHouseInfo := NewHouseInfo()
 				if img, ok := listInfo.Find(".pull-left.imageBox > img").Attr("data-original"); ok {
-					newHouseInfo.Img = strings.Replace(img, "210x158.crop.jpg", "765x517.water3.jpg", 1)
+					newHouseInfo.ImgSrc = strings.Replace(img, "210x158.crop.jpg", "765x517.water3.jpg", 1)
 					//fmt.Println(img)
 				}
-				
+
 				newHouseInfo.Title = listInfo.Find(".pull-left.infoContent > h3 > a").Text()
 				//fmt.Println(title)
 
@@ -133,7 +149,7 @@ func (c *Crawler) Scrape() {
 					newHouseInfo.Ping = typearray[1]
 					newHouseInfo.Floor = typearray[2]
 				}
-				
+
 				newHouseInfo.Address = listInfo.Find(".pull-left.infoContent > .lightBox > em").Text()
 				//fmt.Println(address)
 
@@ -152,9 +168,8 @@ func (c *Crawler) Scrape() {
 }
 
 func stringReplacer(s string) string {
-	// notice that there is two different spaces
+	// notice that there are two different spaces
 	r := strings.NewReplacer("\n", "", " ", "", " ", "")
-	//s = strings.Replace(s, " ", "", -1)
 	return r.Replace(s)
 }
 
@@ -188,25 +203,23 @@ func NewDoc() *goquery.Document {
 	return doc
 }
 
-func ExportJSON(houselist []*HouseInfo) {
-	b, err := json.MarshalIndent(houselist, "", "  ")
+func (c *Crawler) ExportJSON() {
+	b, err := json.MarshalIndent(c.houselist, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
 	_ = ioutil.WriteFile("houselist.json", b, 0644)
 }
 
-func init() {
-	//var url = "https://rent.591.com.tw/?kind=0&region=1"
-	//getHeaders(url)
-}
-
 func main() {
-	var url = "https://rent.591.com.tw/?kind=0&region=1"
-	c := Newcrawler(url)
-	c.Scrape()
-	doc := NewDoc()
-	findItemandPage(doc)
+	//var url = "https://rent.591.com.tw/?kind=0&region=1"
+	c := Newcrawler()
+	c.options.RentPrice = "2"
 
-	ExportJSON(c.houselist)
+	c.Scrape()
+	//doc := NewDoc()
+	//findItemandPage(doc)
+	//fmt.Println(c.options)
+	//fmt.Printf("%+v\n",c.options)
+	c.ExportJSON()
 }
