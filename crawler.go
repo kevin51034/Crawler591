@@ -1,18 +1,16 @@
-package main
+package crawler
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"sync"
-
-	//"os"
-	//"bufio"
-	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/go-querystring/query"
@@ -20,17 +18,16 @@ import (
 
 const rootURL = "https://rent.591.com.tw/?"
 
-// Document is the representation goquery.Document.
 type Document struct {
 	doc *goquery.Document
 }
 
 type Crawler struct {
-	url       string
-	items     int
+	url string
+	//items     int
 	houselist []*HouseInfo
 	options   *Options
-	wg       sync.WaitGroup
+	wg        sync.WaitGroup
 }
 
 type Options struct {
@@ -55,23 +52,26 @@ type Options struct {
 }
 
 type HouseInfo struct {
-	ID		   int `json:"id"`
-	ImgSrc  string `json:"imgsrc"`
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Kind    string `json:"kind"`
-	Layout  string `json:"layout"`
-	Ping    string `json:"ping"`
-	Floor   string `json:"floor"`
-	Address string `json:"address"`
-	Price   string `json:"price"`
-	NewItem bool   `json:"newItem"`
+	ID          int    `json:"id"`
+	ImgSrc      string `json:"imgsrc"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Kind        string `json:"kind"`
+	Layout      string `json:"layout"`
+	Ping        string `json:"ping"`
+	Floor       string `json:"floor"`
+	Address     string `json:"address"`
+	Price       string `json:"price"`
+	NewItem     bool   `json:"newItem"`
+	CrawlerTime string `json:"crawlertime"`
+	UpdateTime  string `json:"updatetime"`
+	Author      string `json:"author"`
 }
 
 func Newcrawler() *Crawler {
 	return &Crawler{
-		url:       rootURL,
-		items:     50,
+		url: rootURL,
+		//items:     50,
 		houselist: make([]*HouseInfo, 0),
 		options: &Options{
 			Kind:      0,
@@ -91,125 +91,6 @@ func (c *Crawler) NewURL() string {
 		log.Fatal(err)
 	}
 	return rootURL + v.Encode()
-}
-func (c *Crawler) Scrape(page int) {
-	defer c.wg.Done()
-	c.url = c.NewURL()
-	// Request the HTML page.
-		u, err := url.Parse(c.url)
-		if err != nil {
-			log.Fatal(err)
-		}
-		q := u.Query()
-		q.Set("firstRow", strconv.Itoa(page*30))
-		fmt.Println("Crawlering ------> " + rootURL + q.Encode())
-		res, err := http.Get(rootURL + q.Encode())
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer res.Body.Close()
-		if res.StatusCode != 200 {
-			log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
-		}
-
-		// Load the HTML document
-		doc, err := goquery.NewDocumentFromReader(res.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var thisid = page*30
-		// Find the content section
-		doc.Find("#content").Each(func(i int, s *goquery.Selection) {
-			// For each listInfo section, and loop to get the detail
-			s.Find(".listInfo.clearfix").Each(func(li int, listInfo *goquery.Selection) {
-				// For each item found, get the band and title
-				newHouseInfo := NewHouseInfo()
-				if img, ok := listInfo.Find(".pull-left.imageBox > img").Attr("data-original"); ok {
-					newHouseInfo.ImgSrc = strings.Replace(img, "210x158.crop.jpg", "765x517.water3.jpg", 1)
-					//fmt.Println(img)
-				}
-
-				newHouseInfo.ID = thisid
-				newHouseInfo.Title = listInfo.Find(".pull-left.infoContent > h3 > a").Text()
-				//fmt.Println(title)
-
-				if link, ok := listInfo.Find(".pull-left.infoContent > h3 > a").Attr("href"); ok {
-					newHouseInfo.URL = "https:" + link
-				}
-
-				housetype := listInfo.Find(".pull-left.infoContent > .lightBox").First().Text()
-				typearray := strings.Split(stringReplacer(housetype), "|")
-				// some time it will contain Room layout in index 1
-				if len(typearray) == 4 {
-					newHouseInfo.Kind = typearray[0]
-					newHouseInfo.Layout = typearray[1]
-					newHouseInfo.Ping = typearray[2]
-					newHouseInfo.Floor = typearray[3]
-				} else {
-					newHouseInfo.Kind = typearray[0]
-					newHouseInfo.Layout = ""
-					newHouseInfo.Ping = typearray[1]
-					newHouseInfo.Floor = typearray[2]
-				}
-
-				newHouseInfo.Address = listInfo.Find(".pull-left.infoContent > .lightBox > em").Text()
-				//fmt.Println(address)
-
-				newHouseInfo.Price = stringReplacer(listInfo.Find(".price > i").Text())
-				newHouseInfo.Price = strings.Replace(newHouseInfo.Price, ",", "", -1)
-				//fmt.Println(price)
-
-				newHouseInfo.NewItem = false
-				listInfo.Find(".newArticle").Each(func(_ int, n *goquery.Selection) {
-					newHouseInfo.NewItem = true
-				})
-				//c.houselist = append(c.houselist, newHouseInfo)
-				c.houselist[thisid] = newHouseInfo
-				thisid++
-			})
-		})
-}
-
-func (c *Crawler) Start(page int) {
-	totalitems, totalpages := c.ItemandPageNum()
-	fmt.Println(totalitems)
-	if page == -1 {
-		page = totalpages
-	}
-	if totalpages < page {
-		fmt.Println("There are only " + strconv.Itoa(totalpages) + " pages!")
-		page = totalpages
-	}
-	c.houselist = make([]*HouseInfo, page*30)
-	for i:=0; i<page; i++ {
-		c.wg.Add(1)
-		go c.Scrape(i)
-	}
-	c.wg.Wait()
-}
-
-func stringReplacer(s string) string {
-	// notice that there are two different spaces
-	r := strings.NewReplacer("\n", "", " ", "", " ", "")
-	return r.Replace(s)
-}
-
-func (c *Crawler) ItemandPageNum() (int, int) {
-	v, err := query.Values(c.options)
-	if err != nil {
-		log.Fatal(err)
-	}
-	url := rootURL + v.Encode()
-	doc := NewDoc(url)
-	//var url = "https://rent.591.com.tw/?kind=0&region=1"
-	r := strings.NewReplacer("\n", "", " ", "", ",", "")
-	stritems := r.Replace(doc.Find(".pull-left.hasData > i").Text())
-	//items := strings.Replace(doc.Find(".pull-left.hasData > i").Text(), ",", "", -1)
-	items, _ := strconv.Atoi(stritems)
-	pages := items/30 + 1
-
-	return items, pages
 }
 
 func NewDoc(url string) *goquery.Document {
@@ -231,23 +112,146 @@ func NewDoc(url string) *goquery.Document {
 	return doc
 }
 
+func (c *Crawler) Scrape(page int) {
+	defer c.wg.Done()
+	c.url = c.NewURL()
+	// Request the HTML page.
+	u, err := url.Parse(c.url)
+	if err != nil {
+		log.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("firstRow", strconv.Itoa(page*30))
+	fmt.Println("Crawlering ------> " + rootURL + q.Encode())
+	res, err := http.Get(rootURL + q.Encode())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+	}
+
+	// Load the HTML document
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var thisid = page * 30
+	// Find the content section
+	doc.Find("#content").Each(func(i int, s *goquery.Selection) {
+		// For each listInfo section, and loop to get the detail
+		s.Find(".listInfo.clearfix").Each(func(li int, listInfo *goquery.Selection) {
+			// For each item found, get the band and title
+			newHouseInfo := NewHouseInfo()
+			newHouseInfo.CrawlerTime = time.Now().Format("2006-01-02 3:4:5 pm")
+			if img, ok := listInfo.Find(".pull-left.imageBox > img").Attr("data-original"); ok {
+				newHouseInfo.ImgSrc = strings.Replace(img, "210x158.crop.jpg", "765x517.water3.jpg", 1)
+				//fmt.Println(img)
+			}
+
+			newHouseInfo.ID = thisid
+			newHouseInfo.Title = listInfo.Find(".pull-left.infoContent > h3 > a").Text()
+			//fmt.Println(title)
+
+			if link, ok := listInfo.Find(".pull-left.infoContent > h3 > a").Attr("href"); ok {
+				newHouseInfo.URL = "https:" + link
+			}
+
+			housetype := listInfo.Find(".pull-left.infoContent > .lightBox").First().Text()
+			typearray := strings.Split(stringReplacer(housetype), "|")
+			// some time it will contain Room layout in index 1
+			if len(typearray) == 4 {
+				newHouseInfo.Kind = typearray[0]
+				newHouseInfo.Layout = typearray[1]
+				newHouseInfo.Ping = typearray[2]
+				newHouseInfo.Floor = typearray[3]
+			} else {
+				newHouseInfo.Kind = typearray[0]
+				newHouseInfo.Layout = ""
+				newHouseInfo.Ping = typearray[1]
+				newHouseInfo.Floor = typearray[2]
+			}
+
+			newHouseInfo.Address = listInfo.Find(".pull-left.infoContent > .lightBox > em").Text()
+			//fmt.Println(address)
+
+			publishInfo := listInfo.Find(".pull-left.infoContent > .lightBox").Eq(1).Next().Text()
+			pInfoarray := strings.Split(stringReplacer(publishInfo), "/")
+			newHouseInfo.Author = pInfoarray[0]
+			newHouseInfo.UpdateTime = pInfoarray[1]
+
+			newHouseInfo.Price = stringReplacer(listInfo.Find(".price > i").Text())
+			newHouseInfo.Price = strings.Replace(newHouseInfo.Price, ",", "", -1)
+
+			newHouseInfo.NewItem = false
+			listInfo.Find(".newArticle").Each(func(_ int, n *goquery.Selection) {
+				newHouseInfo.NewItem = true
+			})
+			c.houselist[thisid] = newHouseInfo
+			thisid++
+		})
+	})
+}
+
+func (c *Crawler) Start(page int) {
+	totalitems, totalpages := c.ItemandPageNum()
+	fmt.Println(totalitems)
+	if page == -1 {
+		page = totalpages
+	}
+	if totalpages < page {
+		fmt.Println("There are only " + strconv.Itoa(totalpages) + " pages!")
+		page = totalpages
+	}
+	c.houselist = make([]*HouseInfo, page*30)
+	for i := 0; i < page; i++ {
+		c.wg.Add(1)
+		go c.Scrape(i)
+	}
+	c.wg.Wait()
+	if page == totalpages {
+		fmt.Println("Total items: " + strconv.Itoa(totalitems))
+	} else {
+		fmt.Println("Total items: " + strconv.Itoa(page*30))
+	}
+	fmt.Println("Total pages: " + strconv.Itoa(page))
+}
+
+func stringReplacer(s string) string {
+	// notice that there are two different spaces
+	r := strings.NewReplacer("\n", "", " ", "", " ", "")
+	return r.Replace(s)
+}
+
+func (c *Crawler) ItemandPageNum() (int, int) {
+	v, err := query.Values(c.options)
+	if err != nil {
+		log.Fatal(err)
+	}
+	url := rootURL + v.Encode()
+	doc := NewDoc(url)
+	r := strings.NewReplacer("\n", "", " ", "", ",", "")
+	stritems := r.Replace(doc.Find(".pull-left.hasData > i").Text())
+	items, _ := strconv.Atoi(stritems)
+	pages := items/30 + 1
+
+	return items, pages
+}
+
+func (c *Crawler) Jsonformat() []byte {
+	b, err := json.MarshalIndent(c.houselist, "", "  ")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return b
+}
+
 func (c *Crawler) ExportJSON() {
 	b, err := json.MarshalIndent(c.houselist, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
 	_ = ioutil.WriteFile("houselist.json", b, 0644)
-}
-
-func main() {
-	//var url = "https://rent.591.com.tw/?kind=0&region=1"
-	c := Newcrawler()
-	c.options.RentPrice = "2"
-	c.Start(5000)
-	//c.Scrape()
-	//doc := NewDoc()
-	//findItemandPage(doc)
-	//fmt.Println(c.options)
-	//fmt.Printf("%+v\n",c.options)
-	c.ExportJSON()
 }
