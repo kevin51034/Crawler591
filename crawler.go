@@ -23,10 +23,10 @@ type Document struct {
 }
 
 type Crawler struct {
-	url string
+	URL string
 	//items     int
-	houselist []*HouseInfo
-	options   *Options
+	Houselist []*HouseInfo
+	Options   *Options
 	wg        sync.WaitGroup
 }
 
@@ -70,10 +70,10 @@ type HouseInfo struct {
 
 func Newcrawler() *Crawler {
 	return &Crawler{
-		url: rootURL,
+		URL: rootURL,
 		//items:     50,
-		houselist: make([]*HouseInfo, 0),
-		options: &Options{
+		Houselist: make([]*HouseInfo, 0),
+		Options: &Options{
 			Kind:      0,
 			Region:    1,
 			Order:     "posttime",
@@ -86,7 +86,7 @@ func NewHouseInfo() *HouseInfo {
 	return &HouseInfo{}
 }
 func (c *Crawler) NewURL() string {
-	v, err := query.Values(c.options)
+	v, err := query.Values(c.Options)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -114,9 +114,9 @@ func NewDoc(url string) *goquery.Document {
 
 func (c *Crawler) Scrape(page int) {
 	defer c.wg.Done()
-	c.url = c.NewURL()
+	c.URL = c.NewURL()
 	// Request the HTML page.
-	u, err := url.Parse(c.url)
+	u, err := url.Parse(c.URL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func (c *Crawler) Scrape(page int) {
 			listInfo.Find(".newArticle").Each(func(_ int, n *goquery.Selection) {
 				newHouseInfo.NewItem = true
 			})
-			c.houselist[thisid] = newHouseInfo
+			c.Houselist[thisid] = newHouseInfo
 			thisid++
 		})
 	})
@@ -205,7 +205,7 @@ func (c *Crawler) Start(page int) {
 		fmt.Println("There are only " + strconv.Itoa(totalpages) + " pages!")
 		page = totalpages
 	}
-	c.houselist = make([]*HouseInfo, page*30)
+	c.Houselist = make([]*HouseInfo, page*30)
 	for i := 0; i < page; i++ {
 		c.wg.Add(1)
 		go c.Scrape(i)
@@ -226,7 +226,7 @@ func stringReplacer(s string) string {
 }
 
 func (c *Crawler) ItemandPageNum() (int, int) {
-	v, err := query.Values(c.options)
+	v, err := query.Values(c.Options)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func (c *Crawler) ItemandPageNum() (int, int) {
 }
 
 func (c *Crawler) Jsonformat() []byte {
-	b, err := json.MarshalIndent(c.houselist, "", "  ")
+	b, err := json.MarshalIndent(c.Houselist, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func (c *Crawler) Jsonformat() []byte {
 }
 
 func (c *Crawler) ExportJSON() {
-	b, err := json.MarshalIndent(c.houselist, "", "  ")
+	b, err := json.MarshalIndent(c.Houselist, "", "  ")
 	if err != nil {
 		log.Fatal(err)
 	}
