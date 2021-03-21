@@ -92,7 +92,7 @@ type HouseInfo struct {
 	Author      string `json:"author"`
 }
 ```
-# Export json formation:
+# Export json format:
 ```json
   {
     "id": 0,
