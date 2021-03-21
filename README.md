@@ -32,7 +32,7 @@ func main() {
   items, pages := c.ItemandPageNum()
   
   // Start crawling
-  // choose the pages you want to crawler, and the result will store in c.HouseInfo data struct.
+  // choose the pages you want to crawler, and the result will store in c.Houselist with HouseInfo data struct.
   c.start(pages)
   
   // Export data
