@@ -40,6 +40,7 @@ func main() {
 }
 ```
 # Crawler struct
+the informations of houses will store in Crawler structer.
 ```go
 type Crawler struct {
 	URL string
